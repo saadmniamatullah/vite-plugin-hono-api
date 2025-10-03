@@ -1,0 +1,70 @@
+{
+  "name": "@saadmniamatullah/vite-plugin-hono-api",
+  "type": "module",
+  "version": "1.1.0",
+  "description": "Low-config Vite plugin that mounts a Hono API at /api and bundles it alongside your frontend.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsup src/*.ts --dts --format esm --clean",
+    "dev": "tsup src/index.ts --dts --format esm --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "play": "pnpm -C playground dev",
+    "dev:play": "vite --root playground --config playground/vite.config.ts",
+    "build:play": "vite build --root playground --config playground/vite.config.ts",
+    "preview:play": "vite preview --root playground --config playground/vite.config.ts"
+  },
+  "keywords": [
+    "vite",
+    "plugin",
+    "hono",
+    "api",
+    "server",
+    "ssr",
+    "development",
+    "typescript"
+  ],
+  "author": "Saad M Niamatullah",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/saadmniamatullah/vite-plugin-saad.git"
+  },
+  "bugs": {
+    "url": "https://github.com/saadmniamatullah/vite-plugin-saad/issues"
+  },
+  "homepage": "https://github.com/saadmniamatullah/vite-plugin-saad#readme",
+  "packageManager": "pnpm@10.11.0",
+  "peerDependencies": {
+    "@hono/node-server": "^1.12.0",
+    "@types/node": "^24.6.0",
+    "hono": "^4.6.9"
+  },
+  "devDependencies": {
+    "@types/node": "^24.6.0",
+    "@typescript-eslint/eslint-plugin": "^8.45.0",
+    "@typescript-eslint/parser": "^8.45.0",
+    "eslint": "^9.36.0",
+    "tsup": "^8.5.0",
+    "typescript": "^5.9.2",
+    "vite": "^7.1.7",
+    "vitest": "^3.2.4"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
