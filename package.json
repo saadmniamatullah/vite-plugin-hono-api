@@ -12,13 +12,13 @@
     "development",
     "typescript"
   ],
-  "homepage": "https://github.com/saadmniamatullah/vite-plugin-saad#readme",
+  "homepage": "https://github.com/saadmniamatullah/vite-plugin-hono-api#readme",
   "bugs": {
-    "url": "https://github.com/saadmniamatullah/vite-plugin-saad/issues"
+    "url": "https://github.com/saadmniamatullah/vite-plugin-hono-api/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/saadmniamatullah/vite-plugin-saad.git"
+    "url": "git+https://github.com/saadmniamatullah/vite-plugin-hono-api.git"
   },
   "license": "MIT",
   "author": "Saad M Niamatullah",

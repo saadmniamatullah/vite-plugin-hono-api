@@ -24,7 +24,7 @@ jobs:
           node-version: '20'
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v3
+        uses: pnpm/action-setup@v4
         with:
           version: 10.11.0
 
@@ -62,7 +62,7 @@ jobs:
             # Install semantic-release if needed
             pnpm add -D semantic-release conventional-changelog-conventionalcommits @semantic-release/changelog @semantic-release/git @semantic-release/github
             # Run semantic release
-            npx semantic-release
+            pnpm exec semantic-release
           else
             echo "No conventional commit detected, skipping release"
           fi
