@@ -1,6 +1,6 @@
 {
   "name": "@saadmniamatullah/vite-plugin-hono-api",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Low-config Vite plugin that mounts a Hono API at /api and bundles it alongside your frontend.",
   "keywords": [
     "vite",
@@ -88,7 +88,6 @@
     "node": ">=18"
   },
   "publishConfig": {
-    "access": "public",
-    "registry": "https://npm.pkg.github.com"
+    "access": "public"
   }
 }
