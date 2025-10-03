@@ -1,112 +1,3 @@
-# CLAUDE.md
-
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-
-## Ground-First Editing Policy
-
-Before proposing or applying **any** code changes:
-
-1. Inspect the project’s tooling (at minimum `package.json`, `tsconfig.json`, and related configs) to determine the module system (ESM vs CJS) and any runtime constraints. Call out implications such as import/export syntax expectations.
-2. Use MCP **Context7** to fetch the relevant, version-specific documentation for every framework or library touched during the edit (e.g., Vite, Hono, Node APIs). Reference the exact docs you consult.
-3. Use MCP **Jina** to:
-    - Search for the latest guidance when behavior differs by version.
-    - Read canonical documentation pages into context (URL → markdown) for the precise APIs you plan to use.
-4. Output a short **Grounding Plan** block *before* proposing changes that includes:
-    - Detected module system (ESM/CJS) plus key implications.
-    - Doc sources consulted (titles and URLs).
-    - Version-specific notes or pitfalls uncovered.
-5. Only after sharing the Grounding Plan, propose the code diff. Reject or revise any suggestion that conflicts with the detected module system or referenced documentation.
-
-These steps are mandatory for every coding task. If any resource is unavailable, document the attempt and continue with the best available information.
-
-## Project Overview
-
-This is a Vite plugin that provides low-config integration of Hono APIs. The plugin automatically mounts a Hono API at `/api` (or custom basePath) during development and builds both frontend and server bundles for production.
-
-**Core Architecture:**
-- **Plugin Entry**: `src/index.ts` - Main plugin implementation with Vite hooks
-- **Expected Structure**: Projects must have `hono/index.ts` that exports a default Hono app
-- **Build Output**: Frontend → `dist/frontend/`, Server → `dist/server.js`
-- **Development**: Middleware intercepts requests at basePath and forwards to Hono app
-
-## Development Commands
-
-```bash
-# Build the plugin
-pnpm build
-
-# Development mode (watch for changes)
-pnpm dev
-
-# Run tests
-pnpm test
-
-# Watch tests during development
-pnpm test:watch
-
-# Test with playground
-pnpm play
-
-# Development playground (alternative)
-pnpm dev:play
-
-# Build playground
-pnpm build:play
-
-# Preview playground build
-pnpm preview:play
-```
-
-## Key Implementation Details
-
-### Plugin Structure (`src/index.ts`)
-- **Dependency Validation**: Checks for Vite 6+, Hono, @hono/node-server, @types/node
-- **Conditional Activation**: Only enables if `hono/index.ts` exists
-- **Development Middleware**: Intercepts requests matching basePath, forwards to Hono app via SSR loading
-- **Build Configuration**: Uses Vite Environment API for parallel frontend/server builds
-- **Wrapper Generation**: Creates `.hono-server.js` for production deployment
-
-### Critical Constants
-- `HONO_ENTRY = 'hono/index.ts'` - Required entry point
-- `WRAPPER_FILE = '.hono-server.js'` - Generated production wrapper
-- Default `basePath = '/api'`
-- Default `port = 4173`
-
-### Build Process
-1. **Frontend**: Builds to `dist/frontend/`
-2. **Server**: Builds Hono app + wrapper to `dist/server.js`
-3. **Deployment Files**: Copies package.json + lockfile to `dist/`
-4. **Cleanup**: Removes generated wrapper file after build
-
-## Testing
-
-- Uses Vitest for testing
-- Test files should be in `tests/` directory (as specified in tsconfig.json)
-- Run `pnpm test` for single run, `pnpm test:watch` for development
-- Tests are excluded from build output
-
-## Important Constraints
-
-### WebSocket Limitations
-WebSocket connections are NOT supported - the middleware doesn't handle HTTP upgrade requests. Use Server-Sent Events instead.
-
-### Vite Version Requirement
-Plugin requires Vite 6+ for Environment API support. Version validation happens at plugin initialization.
-
-### File Structure Requirements
-- **Must have**: `hono/index.ts` exporting default Hono app with fetch method
-- **Generated**: `.hono-server.js` (temporary, cleaned up after build)
-- **Output**: `dist/frontend/` and `dist/server.js`
-
-## Development Notes
-
-- Plugin is ESM-only (type: "module" in package.json)
-- Uses TypeScript with strict mode enabled
-- Supports pnpm workspaces (pnpm-workspace.yaml present)
-- Published to GitHub Packages (@saadmniamatullah scope)
-- Peer dependencies must be installed by consumer projects
-
-<!-- OPENSPEC:START -->
 # OpenSpec Instructions
 
 Instructions for AI coding assistants using OpenSpec for spec-driven development.
@@ -127,7 +18,7 @@ Instructions for AI coding assistants using OpenSpec for spec-driven development
 Create proposal when you need to:
 - Add features or functionality
 - Make breaking changes (API, schema)
-- Change architecture or patterns
+- Change architecture or patterns  
 - Optimize performance (changes behavior)
 - Update security patterns
 
@@ -254,7 +145,7 @@ openspec/
 ```
 New request?
 ├─ Bug fix restoring spec behavior? → Fix directly
-├─ Typo/format/comment? → Fix directly
+├─ Typo/format/comment? → Fix directly  
 ├─ New feature/capability? → Create proposal
 ├─ Breaking change? → Create proposal
 ├─ Architecture change? → Create proposal
@@ -376,7 +267,7 @@ Headers matched with `trim(header)` - whitespace ignored.
 - MODIFIED: Changes the behavior, scope, or acceptance criteria of an existing requirement. Always paste the full, updated requirement content (header + all scenarios). The archiver will replace the entire requirement with what you provide here; partial deltas will drop previous details.
 - RENAMED: Use when only the name changes. If you also change behavior, use RENAMED (name) plus MODIFIED (content) referencing the new name.
 
-Common pitfall: Using MODIFIED to add a new concern without including the previous text. This causes loss of detail at archive time. If you aren't explicitly changing the existing requirement, add a new requirement under ADDED instead.
+Common pitfall: Using MODIFIED to add a new concern without including the previous text. This causes loss of detail at archive time. If you aren’t explicitly changing the existing requirement, add a new requirement under ADDED instead.
 
 Authoring a MODIFIED requirement correctly:
 1) Locate the existing requirement in `openspec/specs/<capability>/spec.md`.
@@ -560,5 +451,3 @@ openspec archive [change]  # Mark complete
 ```
 
 Remember: Specs are truth. Changes are proposals. Keep them in sync.
-
-<!-- OPENSPEC:END -->
