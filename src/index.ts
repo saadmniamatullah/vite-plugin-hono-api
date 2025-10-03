@@ -1,6 +1,56 @@
-import type { Plugin, UserConfig, ViteDevServer } from 'vite';
-import { copyFileSync, mkdirSync, readFileSync, statSync, writeFileSync, unlinkSync } from 'node:fs';
+import type { Plugin, ViteDevServer } from 'vite';
+import {
+  copyFileSync,
+  mkdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+  unlinkSync,
+} from 'node:fs';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import { join } from 'node:path';
+
+type JsonRecord = Record<string, unknown>;
+type NextFunction = (err?: unknown) => void;
+
+const isJsonRecord = (value: unknown): value is JsonRecord =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const getString = (value: unknown): string | undefined =>
+  typeof value === 'string' ? value : undefined;
+
+const toHeaderValue = (value: string | readonly string[] | undefined): string | undefined => {
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value)) {
+    const parts: string[] = [];
+    for (const entry of value) {
+      if (typeof entry === 'string' && entry.length > 0) {
+        parts.push(entry);
+      }
+    }
+    return parts.length > 0 ? parts.join(', ') : undefined;
+  }
+  return undefined;
+};
+
+const toSingleHeaderValue = (value: string | readonly string[] | undefined): string | undefined => {
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      if (typeof entry === 'string' && entry.length > 0) {
+        return entry;
+      }
+    }
+  }
+  return undefined;
+};
+
+const readJsonFile = (path: string): unknown => JSON.parse(readFileSync(path, 'utf8'));
+
+const isHonoApp = (value: unknown): value is HonoAppLike =>
+  typeof value === 'object' &&
+  value !== null &&
+  typeof (value as { fetch?: unknown }).fetch === 'function';
 
 const checkPeerDependencies = async () => {
   const missing: string[] = [];
@@ -19,7 +69,7 @@ const checkPeerDependencies = async () => {
 
   // Check @types/node using import.meta.resolve (ESM approach)
   try {
-    await import.meta.resolve('@types/node');
+    import.meta.resolve('@types/node');
   } catch {
     // Fallback: check if Node.js types are available through ambient types
     try {
@@ -36,13 +86,23 @@ const checkPeerDependencies = async () => {
 
 const checkViteVersion = () => {
   try {
-    const vitePkg = JSON.parse(readFileSync('node_modules/vite/package.json', 'utf8'));
-    const version = vitePkg.version;
-    const majorVersion = parseInt(version.split('.')[0], 10);
+    const vitePkg = readJsonFile('node_modules/vite/package.json');
+    if (!isJsonRecord(vitePkg)) {
+      return { valid: false, currentVersion: 'unknown' };
+    }
 
-    if (majorVersion < 6) {
+    const version = getString(vitePkg.version);
+    if (!version) {
+      return { valid: false, currentVersion: 'unknown' };
+    }
+
+    const [majorPart] = version.split('.');
+    const majorVersion = Number.parseInt(majorPart ?? '', 10);
+
+    if (Number.isNaN(majorVersion) || majorVersion < 6) {
       return { valid: false, currentVersion: version };
     }
+
     return { valid: true, currentVersion: version };
   } catch {
     return { valid: false, currentVersion: 'unknown' };
@@ -92,14 +152,28 @@ export default app;`;
 const copyDeployFiles = (targetDir: string, workingDir: string) => {
   mkdirSync(targetDir, { recursive: true });
 
-  for (const file of ['package.json', 'package-lock.json', 'pnpm-lock.yaml', 'yarn.lock', 'bun.lockb']) {
+  for (const file of [
+    'package.json',
+    'package-lock.json',
+    'pnpm-lock.yaml',
+    'yarn.lock',
+    'bun.lockb',
+  ]) {
     const path = join(workingDir, file);
     if (!fileExists(path)) continue;
 
     if (file === 'package.json') {
-      const pkg = JSON.parse(readFileSync(path, 'utf8'));
-      pkg.scripts = { start: 'node server.js' };
-      writeFileSync(join(targetDir, file), JSON.stringify(pkg, null, 2) + '\n', 'utf8');
+      const pkgRaw = readJsonFile(path);
+      if (!isJsonRecord(pkgRaw)) {
+        throw new Error(`Invalid package.json structure at ${path}`);
+      }
+
+      const pkgWithScripts: JsonRecord = {
+        ...pkgRaw,
+        scripts: { start: 'node server.js' },
+      };
+
+      writeFileSync(join(targetDir, file), JSON.stringify(pkgWithScripts, null, 2) + '\n', 'utf8');
     } else {
       copyFileSync(path, join(targetDir, file));
     }
@@ -109,19 +183,31 @@ const copyDeployFiles = (targetDir: string, workingDir: string) => {
 const loadHonoApp = async (server: ViteDevServer): Promise<HonoAppLike> => {
   const url = `/${HONO_ENTRY}`;
   const moduleNode = await server.moduleGraph.getModuleByUrl(url, true);
-  if (moduleNode) await server.moduleGraph.invalidateModule(moduleNode);
+  if (moduleNode) {
+    server.moduleGraph.invalidateModule(moduleNode);
+  }
 
-  const { default: app } = await server.ssrLoadModule(url);
-  if (!app?.fetch) throw new Error(`${HONO_ENTRY} must export a Hono app with fetch()`);
+  const loadedModule = await server.ssrLoadModule(url);
+  const app = (loadedModule as { default?: unknown }).default;
+  if (!isHonoApp(app)) {
+    throw new Error(`${HONO_ENTRY} must export a Hono app with fetch()`);
+  }
   return app;
 };
 
-const readBody = (req: any): Promise<BodyInit | undefined> =>
+const readBody = (req: IncomingMessage): Promise<BodyInit | undefined> =>
   new Promise((resolve, reject) => {
     if (req.method === 'GET' || req.method === 'HEAD') return resolve(undefined);
     const chunks: Buffer[] = [];
     req.on('data', (chunk: Buffer) => chunks.push(chunk));
-    req.on('end', () => resolve(chunks.length ? Buffer.concat(chunks) as BodyInit : undefined));
+    req.on('end', () => {
+      if (chunks.length === 0) {
+        resolve(undefined);
+        return;
+      }
+      const body = Buffer.concat(chunks);
+      resolve(body as unknown as BodyInit);
+    });
     req.on('error', reject);
   });
 
@@ -135,8 +221,8 @@ export default function honoPlugin(options: HonoPluginOptions = {}): Plugin {
   if (!viteCheck.valid) {
     throw new Error(
       `❌ vite-plugin-hono-api requires Vite 6+. Current version: ${viteCheck.currentVersion}\n` +
-      `To upgrade: npm install vite@latest\n` +
-      `Or check your package.json for version constraints.`
+        `To upgrade: npm install vite@latest\n` +
+        `Or check your package.json for version constraints.`
     );
   }
 
@@ -156,13 +242,13 @@ export default function honoPlugin(options: HonoPluginOptions = {}): Plugin {
         if (missingDeps.length > 0) {
           throw new Error(
             `❌ Missing required peer dependencies: ${missingDeps.join(', ')}\n\n` +
-            `Install them with:\n` +
-            `  npm install ${missingDeps.join(' ')}\n` +
-            `  # or\n` +
-            `  pnpm add ${missingDeps.join(' ')}\n` +
-            `  # or\n` +
-            `  yarn add ${missingDeps.join(' ')}\n\n` +
-            `These dependencies are required for the plugin to work properly.`
+              `Install them with:\n` +
+              `  npm install ${missingDeps.join(' ')}\n` +
+              `  # or\n` +
+              `  pnpm add ${missingDeps.join(' ')}\n` +
+              `  # or\n` +
+              `  yarn add ${missingDeps.join(' ')}\n\n` +
+              `These dependencies are required for the plugin to work properly.`
           );
         }
       }
@@ -211,12 +297,14 @@ export default function honoPlugin(options: HonoPluginOptions = {}): Plugin {
       }
     },
 
-    closeBundle: async () => {
+    closeBundle() {
       const wrapperPath = join(workingDir, WRAPPER_FILE);
       if (fileExists(wrapperPath)) {
         try {
           unlinkSync(wrapperPath);
-        } catch { }
+        } catch (error) {
+          console.warn('Failed to remove generated Hono wrapper file:', error);
+        }
       }
     },
 
@@ -225,37 +313,49 @@ export default function honoPlugin(options: HonoPluginOptions = {}): Plugin {
       if (!fileExists(honoPath)) {
         server.config.logger.warn(
           `⚠️  ${HONO_ENTRY} not found. Hono API will not be available.\n` +
-          `Create this file to enable the API:\n` +
-          `  mkdir hono\n` +
-          `  cat > hono/index.ts << 'EOF'\n` +
-          `import { Hono } from 'hono';\n\n` +
-          `const api = new Hono();\n` +
-          `api.get('/', (c) => c.json({ message: 'Hello World' }));\n\n` +
-          `export default api;\n` +
-          `EOF`
+            `Create this file to enable the API:\n` +
+            `  mkdir hono\n` +
+            `  cat > hono/index.ts << 'EOF'\n` +
+            `import { Hono } from 'hono';\n\n` +
+            `const api = new Hono();\n` +
+            `api.get('/', (c) => c.json({ message: 'Hello World' }));\n\n` +
+            `export default api;\n` +
+            `EOF`
         );
         return;
       }
 
-      server.middlewares.use(async (req, res, next) => {
-        if (!req.url || !req.method) return next();
+      const handleRequest = async (
+        req: IncomingMessage,
+        res: ServerResponse,
+        next: NextFunction
+      ) => {
+        if (!req.url || !req.method) {
+          next();
+          return;
+        }
+
+        const protocol = toSingleHeaderValue(req.headers['x-forwarded-proto']) ?? 'http';
+        const host = toSingleHeaderValue(req.headers.host) ?? 'localhost:5173';
+        const url = new URL(req.url, `${protocol}://${host}`);
+        if (!url.pathname.startsWith(basePath)) {
+          next();
+          return;
+        }
 
         try {
-          const url = new URL(req.url, `${req.headers['x-forwarded-proto'] || 'http'}://${req.headers.host || 'localhost:5173'}`);
-          if (!url.pathname.startsWith(basePath)) return next();
-
-          // Strip basePath to match production behavior
-          const strippedUrl = new URL((url.pathname.slice(basePath.length) || '/') + url.search, url.origin);
+          const strippedPath = url.pathname.slice(basePath.length) || '/';
+          const strippedUrl = new URL(strippedPath + url.search, url.origin);
           const app = await loadHonoApp(server);
 
-          // Convert headers
           const headers = new Headers();
           for (const [key, value] of Object.entries(req.headers)) {
-            if (typeof value === 'string') headers.set(key, value);
-            else if (Array.isArray(value)) headers.set(key, value.join(', '));
+            const normalizedValue = toHeaderValue(value);
+            if (normalizedValue) {
+              headers.set(key, normalizedValue);
+            }
           }
 
-          // Create request and get response
           const request = new Request(strippedUrl.toString(), {
             method: req.method,
             headers,
@@ -264,7 +364,6 @@ export default function honoPlugin(options: HonoPluginOptions = {}): Plugin {
 
           const response = await app.fetch(request);
 
-          // Send response
           response.headers.forEach((value, key) => res.setHeader(key, value));
           res.writeHead(response.status);
 
@@ -280,12 +379,17 @@ export default function honoPlugin(options: HonoPluginOptions = {}): Plugin {
               reader.releaseLock();
             }
           }
+
           res.end();
         } catch (error) {
           console.error('Hono middleware error:', error);
           res.writeHead(500, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ error: 'Internal server error' }));
         }
+      };
+
+      server.middlewares.use((req: IncomingMessage, res: ServerResponse, next: NextFunction) => {
+        void handleRequest(req, res, next);
       });
     },
   };

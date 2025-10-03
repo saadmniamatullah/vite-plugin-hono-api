@@ -1,5 +1,9 @@
 # @saadmniamatullah/vite-plugin-hono-api
 
+[![CI](https://github.com/saadmniamatullah/vite-plugin-saad/workflows/CI/badge.svg)](https://github.com/saadmniamatullah/vite-plugin-saad/actions)
+[![codecov](https://codecov.io/gh/saadmniamatullah/vite-plugin-saad/graph/badge.svg?token=YOUR_CODECOV_TOKEN)](https://codecov.io/gh/saadmniamatullah/vite-plugin-saad)
+[![npm version](https://badge.fury.io/js/%40saadmniamatullah%2Fvite-plugin-hono-api.svg)](https://badge.fury.io/js/%40saadmniamatullah%2Fvite-plugin-hono-api)
+
 A low-config Vite plugin that integrates a Hono app as an API. Create `hono/index.ts` and you're ready to go.
 
 ## Prerequisites
@@ -42,23 +46,30 @@ The `hono/index.ts` file **must exist** and export a default Hono app.
 This plugin has some known limitations:
 
 ### WebSocket Support
+
 ❌ **WebSocket connections are not supported** - The plugin middleware does not handle HTTP upgrade requests. If you need real-time communication, consider using:
+
 - **Server-Sent Events (SSE)** - Supported for one-way streaming from server to client
 - **External WebSocket service** - Use a dedicated WebSocket server alongside this plugin
 
 ### Type Safety
+
 ⚠️ **Basic type safety only** - The plugin provides TypeScript typings for configuration options, but does not offer:
+
 - Request/response type inference
 - Automatic API route type generation
 - OpenAPI schema generation
 
 ### Package Manager Support
+
 📦 **Lockfile copying only** - The plugin copies whichever lockfile it finds (npm, pnpm, yarn, bun) to the output directory, but does not:
+
 - Install dependencies during build
 - Manage package manager-specific features
 - Handle multiple package managers in one project
 
 ### Native Dependencies
+
 🔧 **Limited native dependency support** - Native dependencies (like SQLite drivers) work through Node.js SSR bundling but have no special handling. Performance may vary depending on the driver and Vite's bundling behavior.
 
 ## Installation
@@ -129,21 +140,22 @@ export default api;
 
 ```typescript
 // vite.config.ts
-import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react-swc'
-import honoApi from '@saadmniamatullah/vite-plugin-hono-api'
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react-swc';
+import honoApi from '@saadmniamatullah/vite-plugin-hono-api';
 
 export default defineConfig({
   plugins: [
     react(),
     honoApi({
-      basePath: '/api'  // Optional override
-    })
+      basePath: '/api', // Optional override
+    }),
   ],
-})
+});
 ```
 
 That's it! Your Vite project now has:
+
 - ✅ API at `/api/*` during development
 - ✅ Frontend build to `dist/frontend`
 - ✅ Server build to `dist/server.js`
@@ -152,20 +164,22 @@ That's it! Your Vite project now has:
 
 ```typescript
 interface HonoPluginOptions {
-  basePath?: string;  // API base path (default: '/api')
-  port?: number;      // Default port for generated server wrapper (default: 4173)
+  basePath?: string; // API base path (default: '/api')
+  port?: number; // Default port for generated server wrapper (default: 4173)
 }
 ```
 
 ## How It Works
 
 ### Development Mode
+
 - Plugin checks if `hono/index.ts` exists
 - If found, intercepts requests matching `basePath` (default `/api`)
 - Forwards them to your Hono app
 - If no file exists, no API is mounted
 
 ### Build Mode
+
 - If `hono/index.ts` exists, automatically configures Vite Environment API
 - Builds frontend to `dist/frontend/`
 - Builds server bundle to `dist/server.js`
@@ -187,8 +201,8 @@ dist/
 ```json
 {
   "scripts": {
-    "dev": "vite",                    // Development mode
-    "build": "vite build",            // Builds both frontend + server
+    "dev": "vite", // Development mode
+    "build": "vite build", // Builds both frontend + server
     "start": "node dist/server.js",
     "preview": "vite preview"
   }
@@ -210,6 +224,7 @@ my-app/
 ## Before vs After
 
 ### Before (Manual Setup)
+
 ```typescript
 export default defineConfig({
   build: { outDir: 'dist/frontend' },
@@ -232,10 +247,11 @@ export default defineConfig({
 ```
 
 ### After (With Plugin)
+
 ```typescript
 export default defineConfig({
-  plugins: [vitePluginHono()]
-})
+  plugins: [vitePluginHono()],
+});
 ```
 
 ## Troubleshooting
@@ -243,25 +259,31 @@ export default defineConfig({
 ### Common Issues
 
 #### "Missing required peer dependencies" Error
+
 **Problem:** Plugin throws error about missing dependencies.
 
 **Solution:** Install the peer dependencies:
+
 ```bash
 npm install hono @hono/node-server @types/node
 ```
 
 #### "Vite 6+ required" Error
+
 **Problem:** Plugin doesn't work with older Vite versions.
 
 **Solution:** Upgrade Vite:
+
 ```bash
 npm install vite@latest
 ```
 
 #### "hono/index.ts not found" Warning
+
 **Problem:** Plugin warns about missing Hono entry file.
 
 **Solution:** Create the required file structure:
+
 ```bash
 mkdir hono
 cat > hono/index.ts << 'EOF'
@@ -275,9 +297,11 @@ EOF
 ```
 
 #### API routes return 404
+
 **Problem:** Frontend requests to `/api/*` don't reach the Hono app.
 
 **Solution:** Ensure your Hono app exports a default export with a `fetch` method:
+
 ```typescript
 import { Hono } from 'hono';
 
@@ -289,9 +313,11 @@ export default api;
 ```
 
 #### Build fails with "Cannot resolve module"
+
 **Problem:** TypeScript can't find Hono modules during build.
 
 **Solution:** Check your `tsconfig.json` includes Node.js types:
+
 ```json
 {
   "compilerOptions": {
@@ -337,6 +363,7 @@ export default api;
 ```
 
 Client-side usage:
+
 ```typescript
 // Your frontend code
 const eventSource = new EventSource('/api/events');
@@ -360,6 +387,7 @@ eventSource.onerror = (error) => {
 ### Why Vite 6+ is Required
 
 This plugin relies on Vite's Environment API (introduced in Vite 6) to:
+
 - Build frontend and server bundles in parallel
 - Handle different build targets for each environment
 - Provide optimized SSR bundling for the server
