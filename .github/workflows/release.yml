@@ -5,23 +5,27 @@ on:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: write
+  pull-requests: write
+  id-token: write
+
 jobs:
   release:
-    name: Create Release
+    name: Release
     runs-on: ubuntu-latest
-    if: ${{ github.ref == 'refs/heads/main' && github.event_name == 'push' }}
 
     steps:
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -29,14 +33,15 @@ jobs:
           version: 10.11.0
 
       - name: Get pnpm store directory
+        id: pnpm-store
         shell: bash
         run: |
-          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+          echo "store_path=$(pnpm store path --silent)" >> $GITHUB_OUTPUT
 
       - name: Setup pnpm cache
         uses: actions/cache@v4
         with:
-          path: ${{ env.STORE_PATH }}
+          path: ${{ steps.pnpm-store.outputs.store_path }}
           key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
           restore-keys: |
             ${{ runner.os }}-pnpm-store-
@@ -47,22 +52,13 @@ jobs:
       - name: Run tests
         run: pnpm test
 
-      - name: Build project
+      - name: Build
         run: pnpm build
 
-      - name: Semantic Release
-        if: ${{ secrets.GITHUB_TOKEN != '' }}
+      - name: Run semantic-release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          # Check if conventional commits are present
-          if git log --oneline -1 | grep -E "^(feat|fix|docs|style|refactor|perf|test|chore|build|ci|revert):"; then
-            echo "Conventional commit detected, creating release..."
-            # Install semantic-release if needed
-            pnpm add -D semantic-release conventional-changelog-conventionalcommits @semantic-release/changelog @semantic-release/git @semantic-release/github
-            # Run semantic release
-            pnpm exec semantic-release
-          else
-            echo "No conventional commit detected, skipping release"
-          fi
+          # Use the pinned version installed in devDependencies for reproducibility.
+          pnpm exec semantic-release

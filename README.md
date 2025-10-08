@@ -217,6 +217,20 @@ export { api };
 4. Add tests
 5. Submit a pull request
 
+### Commit Convention
+
+This project uses [Conventional Commits](https://conventionalcommits.org/) for automated versioning and changelog generation. Please follow the format:
+
+- `feat:` for new features
+- `fix:` for bug fixes
+- `docs:` for documentation changes
+- `style:` for formatting changes
+- `refactor:` for code refactoring
+- `test:` for adding or updating tests
+- `chore:` for maintenance tasks
+
+Example: `feat: add new API endpoint`
+
 ## License
 
 MIT
