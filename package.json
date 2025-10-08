@@ -51,7 +51,7 @@
     "test:watch": "vitest"
   },
   "lint-staged": {
-    "*.{js,ts,json}": [
+    "*.{js,ts,json,md}": [
       "prettier --write"
     ],
     "*.{js,ts}": [

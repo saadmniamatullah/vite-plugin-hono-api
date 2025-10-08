@@ -54,7 +54,7 @@ That's it! Your API is now available at `/api/*` during development and builds t
 ```typescript
 interface HonoPluginOptions {
   basePath?: string; // API base path (default: '/api')
-  port?: number;     // Default port for server wrapper (default: 4173)
+  port?: number; // Default port for server wrapper (default: 4173)
 }
 ```
 
@@ -66,8 +66,8 @@ import honoApi from '@saadmniamatullah/vite-plugin-hono-api';
 export default defineConfig({
   plugins: [
     honoApi({
-      basePath: '/api',  // Custom API path
-      port: 3000,       // Custom port
+      basePath: '/api', // Custom API path
+      port: 3000, // Custom port
     }),
   ],
 });
