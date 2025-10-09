@@ -102,4 +102,3 @@ jobs:
           echo "  2. Make sure no extra spaces/quotes when pasting"
           echo "  3. Verify it's an Automation token from npm"
           echo "  4. Check 2FA is set to 'Authorization only'"
-
