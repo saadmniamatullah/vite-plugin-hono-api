@@ -1,7 +1,6 @@
 # @saadmniamatullah/vite-plugin-hono-api
 
 [![CI](https://github.com/saadmniamatullah/vite-plugin-hono-api/workflows/CI/badge.svg)](https://github.com/saadmniamatullah/vite-plugin-hono-api/actions)
-[![codecov](https://codecov.io/gh/saadmniamatullah/vite-plugin-hono-api/graph/badge.svg)](https://codecov.io/gh/saadmniamatullah/vite-plugin-hono-api)
 [![npm version](https://badge.fury.io/js/%40saadmniamatullah%2Fvite-plugin-hono-api.svg)](https://www.npmjs.com/package/@saadmniamatullah/vite-plugin-hono-api)
 
 A low-config Vite plugin that integrates a Hono API with your frontend. Create `hono/index.ts` and you're ready to go.

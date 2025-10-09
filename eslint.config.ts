@@ -9,9 +9,7 @@ export default [
   {
     languageOptions: {
       parserOptions: {
-        projectService: {
-          allowDefaultProject: ['*.js', '*.config.js', 'eslint.config.js'],
-        },
+        projectService: true,
         tsconfigRootDir: import.meta.dirname,
       },
       globals: {
@@ -32,21 +30,6 @@ export default [
       '@typescript-eslint/no-non-null-assertion': 'warn',
       'no-console': 'off',
       'no-empty': 'warn',
-    },
-  },
-  {
-    files: ['**/*.js'],
-    languageOptions: {
-      ecmaVersion: 2022,
-      sourceType: 'module',
-      globals: {
-        console: 'readonly',
-        process: 'readonly',
-        Buffer: 'readonly',
-      },
-    },
-    rules: {
-      'no-console': 'off',
     },
   },
   {
