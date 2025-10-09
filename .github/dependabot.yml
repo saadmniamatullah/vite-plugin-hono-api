@@ -1,0 +1,69 @@
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore"
+      prefix-development: "chore"
+      include: "scope"
+    groups:
+      # Group all development tools together
+      development-dependencies:
+        patterns:
+          - "@commitlint/*"
+          - "commitlint"
+          - "eslint*"
+          - "@eslint/*"
+          - "prettier*"
+          - "husky"
+          - "lint-staged"
+          - "tsup"
+        update-types:
+          - "minor"
+          - "patch"
+      
+      # Group Vite ecosystem
+      vite-ecosystem:
+        patterns:
+          - "vite"
+          - "vitest"
+          - "@vitest/*"
+        update-types:
+          - "minor"
+          - "patch"
+      
+      # Group TypeScript ecosystem
+      typescript-ecosystem:
+        patterns:
+          - "typescript"
+          - "typescript-eslint"
+          - "@typescript-eslint/*"
+          - "@types/*"
+        update-types:
+          - "minor"
+          - "patch"
+      
+      # Group semantic-release ecosystem
+      semantic-release-ecosystem:
+        patterns:
+          - "semantic-release"
+          - "@semantic-release/*"
+        update-types:
+          - "minor"
+          - "patch"
+      
+      # Group other build tools
+      build-tools:
+        patterns:
+          - "jiti"
+        update-types:
+          - "minor"
+          - "patch"
+    
+    # Allow separate PRs for major version updates (more risky)
+    # Major updates won't be grouped - each gets its own PR for careful review
+
