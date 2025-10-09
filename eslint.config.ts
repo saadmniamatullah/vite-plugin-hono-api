@@ -1,8 +1,9 @@
 import js from '@eslint/js';
 import tseslint from 'typescript-eslint';
 import prettier from 'eslint-config-prettier';
+import type { Linter } from 'eslint';
 
-export default [
+const config: Linter.Config[] = [
   js.configs.recommended,
   ...tseslint.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked,
@@ -38,9 +39,11 @@ export default [
       'node_modules/**',
       'coverage/**',
       '*.d.ts',
-      '.hono-server.js',
+      '.hono-server.mjs',
       'playground/dist/**',
     ],
   },
   prettier,
 ];
+
+export default config;

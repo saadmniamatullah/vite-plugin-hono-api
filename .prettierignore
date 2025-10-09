@@ -19,7 +19,7 @@ coverage/
 # Temporary files
 *.tmp
 *.temp
-.hono-server.js
+.hono-server.mjs
 
 # Config files that shouldn't be formatted
 .gitignore

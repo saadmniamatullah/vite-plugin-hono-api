@@ -185,7 +185,7 @@ describe('vite-plugin-saad', () => {
     const env: ConfigEnv = { command: 'build', mode: 'production' };
     const returnedConfig = (await applyConfigHook(plugin, inlineConfig, env)) ?? {};
 
-    expect(returnedConfig.environments?.server?.build?.ssr).toBe('./.hono-server.js');
+    expect(returnedConfig.environments?.server?.build?.ssr).toBe('./.hono-server.mjs');
 
     const resolvedConfig = {
       root,
@@ -193,7 +193,7 @@ describe('vite-plugin-saad', () => {
     } as unknown as ResolvedConfig;
     await applyConfigResolvedHook(plugin, resolvedConfig);
 
-    const wrapperPath = join(root, '.hono-server.js');
+    const wrapperPath = join(root, '.hono-server.mjs');
     const wrapperContents = readFileSync(wrapperPath, 'utf8');
     expect(wrapperContents).toContain("app.route('/api'");
     expect(wrapperContents).toContain("app.use('*', serveStatic({ root: './frontend' }));");
@@ -370,7 +370,7 @@ describe('vite-plugin-saad', () => {
     } as unknown as ResolvedConfig;
     await applyConfigResolvedHook(plugin, resolvedConfig);
 
-    const wrapperPath = join(root, '.hono-server.js');
+    const wrapperPath = join(root, '.hono-server.mjs');
     const wrapper = readFileSync(wrapperPath, 'utf8');
     expect(wrapper).toContain("app.route('/backend', api)");
     expect(wrapper).toContain('process.env.PORT ?? 9090');
@@ -812,7 +812,7 @@ describe('vite-plugin-saad', () => {
     // Call buildStart directly which should create it
     await applyBuildStartHook(plugin, { environment: { name: 'server' } });
 
-    const wrapperPath = join(root, '.hono-server.js');
+    const wrapperPath = join(root, '.hono-server.mjs');
     const wrapperContents = readFileSync(wrapperPath, 'utf8');
     expect(wrapperContents).toContain("app.route('/v1'");
     expect(wrapperContents).toContain('process.env.PORT ?? 8080');
@@ -1103,7 +1103,7 @@ describe('vite-plugin-saad', () => {
     } as unknown as ResolvedConfig;
     await applyConfigResolvedHook(plugin, resolvedConfig);
 
-    const wrapperPath = join(root, '.hono-server.js');
+    const wrapperPath = join(root, '.hono-server.mjs');
     const wrapperContents = readFileSync(wrapperPath, 'utf8');
 
     // Check for multi-runtime comment

@@ -66,12 +66,12 @@ pnpm preview:play
 - **Conditional Activation**: Only enables if `hono/index.ts` exists
 - **Development Middleware**: Intercepts requests matching basePath, forwards to Hono app via SSR loading
 - **Build Configuration**: Uses Vite Environment API for parallel frontend/server builds
-- **Wrapper Generation**: Creates `.hono-server.js` for production deployment
+- **Wrapper Generation**: Creates `.hono-server.mjs` for production deployment
 
 ### Critical Constants
 
 - `HONO_ENTRY = 'hono/index.ts'` - Required entry point
-- `WRAPPER_FILE = '.hono-server.js'` - Generated production wrapper
+- `WRAPPER_FILE = '.hono-server.mjs'` - Generated production wrapper
 - Default `basePath = '/api'`
 - Default `port = 4173`
 
@@ -102,7 +102,7 @@ Plugin requires Vite 6+ for Environment API support. Version validation happens 
 ### File Structure Requirements
 
 - **Must have**: `hono/index.ts` exporting default Hono app with fetch method
-- **Generated**: `.hono-server.js` (temporary, cleaned up after build)
+- **Generated**: `.hono-server.mjs` (temporary, cleaned up after build)
 - **Output**: `dist/frontend/` and `dist/server.js`
 
 ## Development Notes

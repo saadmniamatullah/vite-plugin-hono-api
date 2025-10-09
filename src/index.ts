@@ -100,7 +100,7 @@ interface HonoAppLike {
 }
 
 const HONO_ENTRY = 'hono/index.ts';
-const WRAPPER_FILE = '.hono-server.js';
+const WRAPPER_FILE = '.hono-server.mjs';
 
 const fileExists = (path: string) => {
   try {

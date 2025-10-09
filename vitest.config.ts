@@ -6,7 +6,7 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     include: ['tests/**/*.{test,spec}.{js,ts}'],
-    exclude: ['node_modules', 'dist', '.hono-server.js'],
+    exclude: ['node_modules', 'dist', '.hono-server.mjs'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html', 'lcov'],
@@ -16,7 +16,7 @@ export default defineConfig({
         'dist/',
         'coverage/',
         '*.config.*',
-        '.hono-server.js',
+        '.hono-server.mjs',
         'tests/',
         '**/*.d.ts',
         '**/*.test.{js,ts}',
