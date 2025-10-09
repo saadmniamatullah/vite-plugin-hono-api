@@ -1,69 +1,68 @@
 version: 2
 updates:
-  - package-ecosystem: "npm"
-    directory: "/"
+  - package-ecosystem: 'npm'
+    directory: '/'
     schedule:
-      interval: "weekly"
-      day: "monday"
+      interval: 'weekly'
+      day: 'monday'
     open-pull-requests-limit: 5
     commit-message:
-      prefix: "chore"
-      prefix-development: "chore"
-      include: "scope"
+      prefix: 'chore'
+      prefix-development: 'chore'
+      include: 'scope'
     groups:
       # Group all development tools together
       development-dependencies:
         patterns:
-          - "@commitlint/*"
-          - "commitlint"
-          - "eslint*"
-          - "@eslint/*"
-          - "prettier*"
-          - "husky"
-          - "lint-staged"
-          - "tsup"
+          - '@commitlint/*'
+          - 'commitlint'
+          - 'eslint*'
+          - '@eslint/*'
+          - 'prettier*'
+          - 'husky'
+          - 'lint-staged'
+          - 'tsup'
         update-types:
-          - "minor"
-          - "patch"
-      
+          - 'minor'
+          - 'patch'
+
       # Group Vite ecosystem
       vite-ecosystem:
         patterns:
-          - "vite"
-          - "vitest"
-          - "@vitest/*"
+          - 'vite'
+          - 'vitest'
+          - '@vitest/*'
         update-types:
-          - "minor"
-          - "patch"
-      
+          - 'minor'
+          - 'patch'
+
       # Group TypeScript ecosystem
       typescript-ecosystem:
         patterns:
-          - "typescript"
-          - "typescript-eslint"
-          - "@typescript-eslint/*"
-          - "@types/*"
+          - 'typescript'
+          - 'typescript-eslint'
+          - '@typescript-eslint/*'
+          - '@types/*'
         update-types:
-          - "minor"
-          - "patch"
-      
+          - 'minor'
+          - 'patch'
+
       # Group semantic-release ecosystem
       semantic-release-ecosystem:
         patterns:
-          - "semantic-release"
-          - "@semantic-release/*"
+          - 'semantic-release'
+          - '@semantic-release/*'
         update-types:
-          - "minor"
-          - "patch"
-      
+          - 'minor'
+          - 'patch'
+
       # Group other build tools
       build-tools:
         patterns:
-          - "jiti"
+          - 'jiti'
         update-types:
-          - "minor"
-          - "patch"
-    
+          - 'minor'
+          - 'patch'
+
     # Allow separate PRs for major version updates (more risky)
     # Major updates won't be grouped - each gets its own PR for careful review
-
