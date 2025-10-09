@@ -1,6 +1,6 @@
 {
   "name": "@saadmniamatullah/vite-plugin-hono-api",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "Low-config Vite plugin that mounts a Hono API at /api and bundles it alongside your frontend. Supports Node.js, Bun, and Deno runtimes.",
   "keywords": [
     "vite",
