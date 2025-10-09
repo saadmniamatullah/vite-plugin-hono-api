@@ -1,7 +1,7 @@
 {
   "name": "@saadmniamatullah/vite-plugin-hono-api",
   "version": "1.2.0",
-  "description": "Low-config Vite plugin that mounts a Hono API at /api and bundles it alongside your frontend.",
+  "description": "Low-config Vite plugin that mounts a Hono API at /api and bundles it alongside your frontend. Supports Node.js, Bun, and Deno runtimes.",
   "keywords": [
     "vite",
     "plugin",
@@ -10,7 +10,11 @@
     "server",
     "ssr",
     "development",
-    "typescript"
+    "typescript",
+    "bun",
+    "deno",
+    "nodejs",
+    "multi-runtime"
   ],
   "homepage": "https://github.com/saadmniamatullah/vite-plugin-hono-api#readme",
   "bugs": {
@@ -86,9 +90,15 @@
     "vitest": "^3.2.4"
   },
   "peerDependencies": {
-    "@hono/node-server": "^1.12.0",
-    "@types/node": "^24.6.0",
     "hono": "^4.6.9"
+  },
+  "peerDependenciesMeta": {
+    "@hono/node-server": {
+      "optional": true
+    },
+    "@types/node": {
+      "optional": true
+    }
   },
   "packageManager": "pnpm@10.11.0",
   "engines": {

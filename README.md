@@ -14,7 +14,11 @@ npm install @saadmniamatullah/vite-plugin-hono-api --save-dev
 ### Peer Dependencies
 
 ```bash
-npm install hono @hono/node-server @types/node
+# Required for all runtimes
+npm install hono
+
+# Optional: Only needed for Node.js runtime
+npm install @hono/node-server @types/node
 ```
 
 ## Quick Start
@@ -136,11 +140,41 @@ npm run build
 node dist/server.js
 ```
 
+## Runtime Support
+
+This plugin generates servers that work with **Node.js, Bun, and Deno** automatically—no configuration needed!
+
+### Node.js
+
+```bash
+npm install hono @hono/node-server
+npm run build
+node dist/server.js
+```
+
+### Bun
+
+```bash
+bun add hono
+bun run build
+bun run dist/server.js
+```
+
+### Deno
+
+```bash
+# No installation needed - Deno uses npm: specifiers
+npm run build
+deno run --allow-net --allow-read dist/server.js
+```
+
+The generated server automatically detects the runtime and uses the appropriate APIs.
+
 ## Requirements
 
 - **Vite 6+** - Uses Environment API for parallel builds
 - **Hono 4+** - Modern Hono with TypeScript support
-- **Node.js 18+** - Required for ESM support
+- **Runtime** - Node.js 18+, Bun 1.0+, or Deno 1.30+
 
 ## Limitations
 
@@ -164,12 +198,18 @@ Basic TypeScript support only. No automatic API route type generation or OpenAPI
 
 ## Troubleshooting
 
-### "Missing required peer dependencies"
+### "Missing required peer dependency: hono"
 
-Install the peer dependencies:
+Install Hono:
 
 ```bash
-npm install hono @hono/node-server @types/node
+npm install hono
+```
+
+For Node.js runtime, also install:
+
+```bash
+npm install @hono/node-server @types/node
 ```
 
 ### "Vite 6+ required"
