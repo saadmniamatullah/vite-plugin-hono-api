@@ -63,8 +63,13 @@ const createResponseSpy = (): ResponseSpy => {
             : value.toString();
       headers.set(key.toLowerCase(), normalized);
     },
-    writeHead(code: number) {
+    writeHead(code: number, headersObj?: Record<string, string>) {
       this.status = code;
+      if (headersObj) {
+        for (const [key, value] of Object.entries(headersObj)) {
+          headers.set(key.toLowerCase(), value);
+        }
+      }
     },
     write(chunk: string | Uint8Array) {
       chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : Buffer.from(chunk));
@@ -207,6 +212,9 @@ describe('vite-plugin-saad', () => {
 
   it('copies deploy files after running builder for client and server', async () => {
     const root = createTempProject();
+    // Add yarn.lock to test that path
+    writeFileSync(join(root, 'yarn.lock'), '# yarn lockfile', 'utf8');
+
     const plugin = honoPlugin();
 
     const inlineConfig: InlineConfig = { root };
@@ -240,6 +248,18 @@ describe('vite-plugin-saad', () => {
     const distPackage = readFileSync(distPackagePath, 'utf8');
     const parsedPackage = JSON.parse(distPackage) as { scripts?: Record<string, string> };
     expect(parsedPackage.scripts).toEqual({ start: 'node server.js' });
+
+    // Verify yarn.lock was copied
+    const distYarnLock = join(root, 'dist/yarn.lock');
+    try {
+      const yarnLockContents = readFileSync(distYarnLock, 'utf8');
+      expect(yarnLockContents).toContain('# yarn lockfile');
+    } catch {
+      // If not in root/dist, check process.cwd()/dist
+      const cwdYarnLock = join(process.cwd(), 'dist/yarn.lock');
+      const yarnLockContents = readFileSync(cwdYarnLock, 'utf8');
+      expect(yarnLockContents).toContain('# yarn lockfile');
+    }
 
     rmSync(root, { recursive: true, force: true });
     rmSync(join(process.cwd(), 'dist'), { recursive: true, force: true });
@@ -457,6 +477,614 @@ describe('vite-plugin-saad', () => {
 
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('hono/index.ts not found'));
     expect(use).not.toHaveBeenCalled();
+
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it('handles middleware errors gracefully', async () => {
+    const root = createTempProject();
+    const plugin = honoPlugin();
+
+    const inlineConfig: InlineConfig = { root };
+    const env: ConfigEnv = { command: 'serve', mode: 'development' };
+    await applyConfigHook(plugin, inlineConfig, env);
+
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    let middleware: MiddlewareFn | undefined;
+
+    const server = {
+      moduleGraph: {
+        getModuleByUrl: vi
+          .fn<(url: string, ssr?: boolean) => Promise<null>>()
+          .mockResolvedValue(null),
+        invalidateModule: vi.fn<(module: unknown) => void>(),
+      },
+      ssrLoadModule: vi
+        .fn<(url: string) => Promise<{ default: unknown }>>()
+        .mockRejectedValue(new Error('Failed to load Hono app')),
+      middlewares: {
+        use: vi.fn<(fn: MiddlewareFn) => unknown>(),
+      },
+      config: { logger: { warn: vi.fn<(msg: string) => void>() } },
+    };
+
+    server.middlewares.use.mockImplementation((fn) => {
+      middleware = fn;
+      return server;
+    });
+
+    await applyConfigureServerHook(plugin, server);
+
+    if (!middleware) throw new Error('Middleware was not registered');
+
+    const res = createResponseSpy();
+    const next = vi.fn<NextFunction>(() => undefined);
+
+    await middleware(
+      createRequest({
+        url: '/api/error',
+        method: 'GET',
+        headers: { host: 'localhost:5173' },
+      }),
+      res as unknown as ServerResponse,
+      next
+    );
+    await res.waitForEnd();
+
+    expect(errorSpy).toHaveBeenCalledWith('Hono middleware error:', expect.any(Error));
+    expect(res.status).toBe(500);
+    expect(res.header('content-type')).toBe('application/json');
+    expect(res.body()).toContain('Internal server error');
+
+    errorSpy.mockRestore();
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it('calls next() when request is missing url or method', async () => {
+    const root = createTempProject();
+    const plugin = honoPlugin();
+
+    const inlineConfig: InlineConfig = { root };
+    const env: ConfigEnv = { command: 'serve', mode: 'development' };
+    await applyConfigHook(plugin, inlineConfig, env);
+
+    let middleware: MiddlewareFn | undefined;
+
+    const server = {
+      moduleGraph: {
+        getModuleByUrl: vi
+          .fn<(url: string, ssr?: boolean) => Promise<null>>()
+          .mockResolvedValue(null),
+        invalidateModule: vi.fn<(module: unknown) => void>(),
+      },
+      ssrLoadModule: vi
+        .fn<(url: string) => Promise<{ default: { fetch: () => Response } }>>()
+        .mockResolvedValue({
+          default: {
+            fetch: () => new Response(JSON.stringify({ ok: true })),
+          },
+        }),
+      middlewares: {
+        use: vi.fn<(fn: MiddlewareFn) => unknown>(),
+      },
+      config: { logger: { warn: vi.fn<(msg: string) => void>() } },
+    };
+
+    server.middlewares.use.mockImplementation((fn) => {
+      middleware = fn;
+      return server;
+    });
+
+    await applyConfigureServerHook(plugin, server);
+
+    if (!middleware) throw new Error('Middleware was not registered');
+
+    // Test: request without url
+    const nextNoUrl = vi.fn<NextFunction>(() => undefined);
+    const reqNoUrl = createRequest({ url: '/api/test', method: 'GET' });
+    reqNoUrl.url = undefined;
+
+    await middleware(reqNoUrl, createResponseSpy() as unknown as ServerResponse, nextNoUrl);
+
+    expect(nextNoUrl).toHaveBeenCalledOnce();
+    expect(server.ssrLoadModule).not.toHaveBeenCalled();
+
+    // Test: request without method
+    const nextNoMethod = vi.fn<NextFunction>(() => undefined);
+    const reqNoMethod = createRequest({ url: '/api/test', method: 'GET' });
+    reqNoMethod.method = undefined;
+
+    await middleware(reqNoMethod, createResponseSpy() as unknown as ServerResponse, nextNoMethod);
+
+    expect(nextNoMethod).toHaveBeenCalledOnce();
+
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it('throws error when hono app does not have fetch method', async () => {
+    const root = createTempProject();
+    const plugin = honoPlugin();
+
+    const inlineConfig: InlineConfig = { root };
+    const env: ConfigEnv = { command: 'serve', mode: 'development' };
+    await applyConfigHook(plugin, inlineConfig, env);
+
+    let middleware: MiddlewareFn | undefined;
+
+    const server = {
+      moduleGraph: {
+        getModuleByUrl: vi
+          .fn<(url: string, ssr?: boolean) => Promise<null>>()
+          .mockResolvedValue(null),
+        invalidateModule: vi.fn<(module: unknown) => void>(),
+      },
+      ssrLoadModule: vi
+        .fn<(url: string) => Promise<{ default: unknown }>>()
+        .mockResolvedValue({ default: { notFetch: 'wrong' } }),
+      middlewares: {
+        use: vi.fn<(fn: MiddlewareFn) => unknown>(),
+      },
+      config: { logger: { warn: vi.fn<(msg: string) => void>() } },
+    };
+
+    server.middlewares.use.mockImplementation((fn) => {
+      middleware = fn;
+      return server;
+    });
+
+    await applyConfigureServerHook(plugin, server);
+
+    if (!middleware) throw new Error('Middleware was not registered');
+
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const res = createResponseSpy();
+    const next = vi.fn<NextFunction>(() => undefined);
+
+    await middleware(
+      createRequest({
+        url: '/api/test',
+        method: 'GET',
+        headers: { host: 'localhost:5173' },
+      }),
+      res as unknown as ServerResponse,
+      next
+    );
+    await res.waitForEnd();
+
+    expect(errorSpy).toHaveBeenCalled();
+    expect(res.status).toBe(500);
+
+    errorSpy.mockRestore();
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it('handles HEAD and GET requests without body', async () => {
+    const root = createTempProject();
+    const plugin = honoPlugin();
+
+    const inlineConfig: InlineConfig = { root };
+    const env: ConfigEnv = { command: 'serve', mode: 'development' };
+    await applyConfigHook(plugin, inlineConfig, env);
+
+    let middleware: MiddlewareFn | undefined;
+    let receivedRequestBody: BodyInit | undefined | null;
+
+    const fetchMock = vi.fn<(request: Request) => Promise<Response>>((req) => {
+      // Capture the body that was passed
+      receivedRequestBody = req.body;
+      return Promise.resolve(
+        new Response(JSON.stringify({ method: req.method }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
+      );
+    });
+
+    const server = {
+      moduleGraph: {
+        getModuleByUrl: vi
+          .fn<(url: string, ssr?: boolean) => Promise<null>>()
+          .mockResolvedValue(null),
+        invalidateModule: vi.fn<(module: unknown) => void>(),
+      },
+      ssrLoadModule: vi
+        .fn<(url: string) => Promise<{ default: { fetch: typeof fetchMock } }>>()
+        .mockResolvedValue({ default: { fetch: fetchMock } }),
+      middlewares: {
+        use: vi.fn<(fn: MiddlewareFn) => unknown>(),
+      },
+      config: { logger: { warn: vi.fn<(msg: string) => void>() } },
+    };
+
+    server.middlewares.use.mockImplementation((fn) => {
+      middleware = fn;
+      return server;
+    });
+
+    await applyConfigureServerHook(plugin, server);
+
+    if (!middleware) throw new Error('Middleware was not registered');
+
+    // Test HEAD request (should not have body)
+    const resHead = createResponseSpy();
+    const nextHead = vi.fn<NextFunction>(() => undefined);
+
+    await middleware(
+      createRequest({
+        url: '/api/test',
+        method: 'HEAD',
+        headers: { host: 'localhost:5173' },
+      }),
+      resHead as unknown as ServerResponse,
+      nextHead
+    );
+    await resHead.waitForEnd();
+
+    expect(fetchMock).toHaveBeenCalled();
+    expect(resHead.status).toBe(200);
+    // HEAD/GET requests should have null body (per Fetch API spec)
+    expect(receivedRequestBody).toBeNull();
+
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it('handles x-forwarded-proto header for https', async () => {
+    const root = createTempProject();
+    const plugin = honoPlugin();
+
+    const inlineConfig: InlineConfig = { root };
+    const env: ConfigEnv = { command: 'serve', mode: 'development' };
+    await applyConfigHook(plugin, inlineConfig, env);
+
+    let middleware: MiddlewareFn | undefined;
+    let capturedUrl: string | undefined;
+
+    const fetchMock = vi.fn<(request: Request) => Promise<Response>>((req) => {
+      capturedUrl = req.url;
+      return Promise.resolve(
+        new Response(JSON.stringify({ received: req.url }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
+      );
+    });
+
+    const server = {
+      moduleGraph: {
+        getModuleByUrl: vi
+          .fn<(url: string, ssr?: boolean) => Promise<null>>()
+          .mockResolvedValue(null),
+        invalidateModule: vi.fn<(module: unknown) => void>(),
+      },
+      ssrLoadModule: vi
+        .fn<(url: string) => Promise<{ default: { fetch: typeof fetchMock } }>>()
+        .mockResolvedValue({ default: { fetch: fetchMock } }),
+      middlewares: {
+        use: vi.fn<(fn: MiddlewareFn) => unknown>(),
+      },
+      config: { logger: { warn: vi.fn<(msg: string) => void>() } },
+    };
+
+    server.middlewares.use.mockImplementation((fn) => {
+      middleware = fn;
+      return server;
+    });
+
+    await applyConfigureServerHook(plugin, server);
+
+    if (!middleware) throw new Error('Middleware was not registered');
+
+    const res = createResponseSpy();
+    const next = vi.fn<NextFunction>(() => undefined);
+
+    await middleware(
+      createRequest({
+        url: '/api/secure',
+        method: 'GET',
+        headers: {
+          host: 'example.com',
+          'x-forwarded-proto': 'https',
+        },
+      }),
+      res as unknown as ServerResponse,
+      next
+    );
+    await res.waitForEnd();
+
+    expect(fetchMock).toHaveBeenCalled();
+    expect(capturedUrl).toContain('https://');
+    expect(capturedUrl).toContain('example.com');
+    expect(res.status).toBe(200);
+
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it('creates wrapper in buildStart if not already present', async () => {
+    const root = createTempProject();
+    const plugin = honoPlugin({ basePath: '/v1', port: 8080 });
+
+    const inlineConfig: InlineConfig = { root };
+    const env: ConfigEnv = { command: 'build', mode: 'production' };
+    await applyConfigHook(plugin, inlineConfig, env);
+
+    // Skip configResolved so wrapper is NOT created yet
+    // Call buildStart directly which should create it
+    await applyBuildStartHook(plugin, { environment: { name: 'server' } });
+
+    const wrapperPath = join(root, '.hono-server.js');
+    const wrapperContents = readFileSync(wrapperPath, 'utf8');
+    expect(wrapperContents).toContain("app.route('/v1'");
+    expect(wrapperContents).toContain('process.env.PORT ?? 8080');
+
+    await applyCloseBundleHook(plugin);
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it('handles module graph invalidation when module exists', async () => {
+    const root = createTempProject();
+    const plugin = honoPlugin();
+
+    const inlineConfig: InlineConfig = { root };
+    const env: ConfigEnv = { command: 'serve', mode: 'development' };
+    await applyConfigHook(plugin, inlineConfig, env);
+
+    let middleware: MiddlewareFn | undefined;
+    const mockModule = { id: '/hono/index.ts', invalidated: false };
+
+    const server = {
+      moduleGraph: {
+        getModuleByUrl: vi
+          .fn<(url: string, ssr?: boolean) => Promise<typeof mockModule>>()
+          .mockResolvedValue(mockModule),
+        invalidateModule: vi.fn<(module: typeof mockModule) => void>((mod) => {
+          mod.invalidated = true;
+        }),
+      },
+      ssrLoadModule: vi
+        .fn<(url: string) => Promise<{ default: { fetch: () => Response } }>>()
+        .mockResolvedValue({
+          default: {
+            fetch: () =>
+              new Response(JSON.stringify({ ok: true }), {
+                status: 200,
+                headers: { 'content-type': 'application/json' },
+              }),
+          },
+        }),
+      middlewares: {
+        use: vi.fn<(fn: MiddlewareFn) => unknown>(),
+      },
+      config: { logger: { warn: vi.fn<(msg: string) => void>() } },
+    };
+
+    server.middlewares.use.mockImplementation((fn) => {
+      middleware = fn;
+      return server;
+    });
+
+    await applyConfigureServerHook(plugin, server);
+
+    if (!middleware) throw new Error('Middleware was not registered');
+
+    const res = createResponseSpy();
+    const next = vi.fn<NextFunction>(() => undefined);
+
+    await middleware(
+      createRequest({
+        url: '/api/test',
+        method: 'GET',
+        headers: { host: 'localhost:5173' },
+      }),
+      res as unknown as ServerResponse,
+      next
+    );
+    await res.waitForEnd();
+
+    expect(server.moduleGraph.getModuleByUrl).toHaveBeenCalledWith('/hono/index.ts', true);
+    expect(server.moduleGraph.invalidateModule).toHaveBeenCalledWith(mockModule);
+    expect(mockModule.invalidated).toBe(true);
+    expect(res.status).toBe(200);
+
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it('handles array and empty header values correctly', async () => {
+    const root = createTempProject();
+    const plugin = honoPlugin();
+
+    const inlineConfig: InlineConfig = { root };
+    const env: ConfigEnv = { command: 'serve', mode: 'development' };
+    await applyConfigHook(plugin, inlineConfig, env);
+
+    let middleware: MiddlewareFn | undefined;
+    let receivedHeaders: Headers | undefined;
+
+    const fetchMock = vi.fn<(request: Request) => Promise<Response>>((req) => {
+      receivedHeaders = req.headers;
+      return Promise.resolve(
+        new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+        })
+      );
+    });
+
+    const server = {
+      moduleGraph: {
+        getModuleByUrl: vi
+          .fn<(url: string, ssr?: boolean) => Promise<null>>()
+          .mockResolvedValue(null),
+        invalidateModule: vi.fn<(module: unknown) => void>(),
+      },
+      ssrLoadModule: vi
+        .fn<(url: string) => Promise<{ default: { fetch: typeof fetchMock } }>>()
+        .mockResolvedValue({ default: { fetch: fetchMock } }),
+      middlewares: {
+        use: vi.fn<(fn: MiddlewareFn) => unknown>(),
+      },
+      config: { logger: { warn: vi.fn<(msg: string) => void>() } },
+    };
+
+    server.middlewares.use.mockImplementation((fn) => {
+      middleware = fn;
+      return server;
+    });
+
+    await applyConfigureServerHook(plugin, server);
+
+    if (!middleware) throw new Error('Middleware was not registered');
+
+    const res = createResponseSpy();
+    const next = vi.fn<NextFunction>(() => undefined);
+
+    // Test with array header values and empty strings
+    const req = createRequest({
+      url: '/api/test',
+      method: 'GET',
+      headers: {
+        host: 'localhost:5173',
+        'x-custom': ['value1', 'value2', ''],
+        'x-empty': '',
+        'x-single': 'single-value',
+      },
+    });
+
+    await middleware(req, res as unknown as ServerResponse, next);
+    await res.waitForEnd();
+
+    expect(fetchMock).toHaveBeenCalled();
+    expect(receivedHeaders?.get('x-custom')).toBe('value1, value2');
+    expect(receivedHeaders?.get('x-empty')).toBeNull();
+    expect(receivedHeaders?.get('x-single')).toBe('single-value');
+
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it('handles query parameters in requests', async () => {
+    const root = createTempProject();
+    const plugin = honoPlugin();
+
+    const inlineConfig: InlineConfig = { root };
+    const env: ConfigEnv = { command: 'serve', mode: 'development' };
+    await applyConfigHook(plugin, inlineConfig, env);
+
+    let middleware: MiddlewareFn | undefined;
+    let capturedUrl: string | undefined;
+
+    const fetchMock = vi.fn<(request: Request) => Promise<Response>>((req) => {
+      capturedUrl = req.url;
+      return Promise.resolve(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+    });
+
+    const server = {
+      moduleGraph: {
+        getModuleByUrl: vi
+          .fn<(url: string, ssr?: boolean) => Promise<null>>()
+          .mockResolvedValue(null),
+        invalidateModule: vi.fn<(module: unknown) => void>(),
+      },
+      ssrLoadModule: vi
+        .fn<(url: string) => Promise<{ default: { fetch: typeof fetchMock } }>>()
+        .mockResolvedValue({ default: { fetch: fetchMock } }),
+      middlewares: {
+        use: vi.fn<(fn: MiddlewareFn) => unknown>(),
+      },
+      config: { logger: { warn: vi.fn<(msg: string) => void>() } },
+    };
+
+    server.middlewares.use.mockImplementation((fn) => {
+      middleware = fn;
+      return server;
+    });
+
+    await applyConfigureServerHook(plugin, server);
+
+    if (!middleware) throw new Error('Middleware was not registered');
+
+    const res = createResponseSpy();
+    const next = vi.fn<NextFunction>(() => undefined);
+
+    // Test with query string
+    await middleware(
+      createRequest({
+        url: '/api/users?page=2&limit=10',
+        method: 'GET',
+        headers: { host: 'localhost:5173' },
+      }),
+      res as unknown as ServerResponse,
+      next
+    );
+    await res.waitForEnd();
+
+    expect(fetchMock).toHaveBeenCalled();
+    expect(capturedUrl).toContain('/users?page=2&limit=10');
+    expect(capturedUrl).not.toContain('/api');
+    expect(res.status).toBe(200);
+
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it('handles requests to exact basePath root', async () => {
+    const root = createTempProject();
+    const plugin = honoPlugin();
+
+    const inlineConfig: InlineConfig = { root };
+    const env: ConfigEnv = { command: 'serve', mode: 'development' };
+    await applyConfigHook(plugin, inlineConfig, env);
+
+    let middleware: MiddlewareFn | undefined;
+    let capturedUrl: string | undefined;
+
+    const fetchMock = vi.fn<(request: Request) => Promise<Response>>((req) => {
+      capturedUrl = req.url;
+      return Promise.resolve(new Response(JSON.stringify({ message: 'root' }), { status: 200 }));
+    });
+
+    const server = {
+      moduleGraph: {
+        getModuleByUrl: vi
+          .fn<(url: string, ssr?: boolean) => Promise<null>>()
+          .mockResolvedValue(null),
+        invalidateModule: vi.fn<(module: unknown) => void>(),
+      },
+      ssrLoadModule: vi
+        .fn<(url: string) => Promise<{ default: { fetch: typeof fetchMock } }>>()
+        .mockResolvedValue({ default: { fetch: fetchMock } }),
+      middlewares: {
+        use: vi.fn<(fn: MiddlewareFn) => unknown>(),
+      },
+      config: { logger: { warn: vi.fn<(msg: string) => void>() } },
+    };
+
+    server.middlewares.use.mockImplementation((fn) => {
+      middleware = fn;
+      return server;
+    });
+
+    await applyConfigureServerHook(plugin, server);
+
+    if (!middleware) throw new Error('Middleware was not registered');
+
+    const res = createResponseSpy();
+    const next = vi.fn<NextFunction>(() => undefined);
+
+    // Test request to exactly /api (should become /)
+    await middleware(
+      createRequest({
+        url: '/api',
+        method: 'GET',
+        headers: { host: 'localhost:5173' },
+      }),
+      res as unknown as ServerResponse,
+      next
+    );
+    await res.waitForEnd();
+
+    expect(fetchMock).toHaveBeenCalled();
+    // When path is exactly /api, strippedPath should be "/"
+    expect(capturedUrl).toContain('://');
+    expect(capturedUrl).toMatch(/\/{1,2}$/); // Should end with /
+    expect(res.status).toBe(200);
 
     rmSync(root, { recursive: true, force: true });
   });
