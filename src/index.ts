@@ -311,7 +311,7 @@ export default function honoPlugin(options: HonoPluginOptions = {}): Plugin {
     buildStart() {
       // Use environment context to determine if this is the server build
       const isServerEnv = this.environment?.name === 'server' || this.environment?.name === 'ssr';
-      
+
       if (isBuildCommand && isServerEnv) {
         const wrapperPath = join(workingDir, WRAPPER_FILE);
         if (!fileExists(wrapperPath)) {

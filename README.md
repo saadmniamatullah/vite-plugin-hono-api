@@ -5,6 +5,12 @@
 
 A low-config Vite plugin that integrates a Hono API with your frontend. Create `hono/index.ts` and you're ready to go.
 
+## Requirements
+
+- **Vite**: 6.0.0 or later (including Vite 7 with full Environment API support)
+- **Hono**: 4.6.9 or later
+- **Node.js**: 18 or later
+
 ## Installation
 
 ```bash
@@ -214,11 +220,15 @@ npm install @hono/node-server @types/node
 
 ### "Vite 6+ required"
 
+This plugin requires Vite 6 or later. It's fully compatible with both Vite 6 and Vite 7 (including the new Environment API).
+
 Upgrade Vite:
 
 ```bash
 npm install vite@latest
 ```
+
+**Vite 7 Compatibility**: The plugin fully supports Vite 7's Environment API with environment-aware hooks, per-environment lifecycle management, and proper server/client environment filtering.
 
 ### "hono/index.ts not found"
 
