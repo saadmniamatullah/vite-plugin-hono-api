@@ -9,6 +9,7 @@ permissions:
   contents: write
   pull-requests: write
   id-token: write
+  packages: write
 
 jobs:
   release:
@@ -21,7 +22,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Setup Node.js
+      - name: Setup Node.js for NPM
         uses: actions/setup-node@v4
         with:
           node-version: '20'
@@ -62,3 +63,21 @@ jobs:
         run: |
           # Use the pinned version installed in devDependencies for reproducibility.
           pnpm exec semantic-release
+
+      - name: Setup Node.js for GitHub Packages
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://npm.pkg.github.com'
+          scope: '@saadmniamatullah'
+
+      - name: Publish to GitHub Packages
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Only publish if semantic-release created a new version
+          if git describe --exact-match --tags HEAD 2>/dev/null; then
+            pnpm publish --registry https://npm.pkg.github.com --no-git-checks
+          else
+            echo "No new version created, skipping GitHub Packages publish"
+          fi
