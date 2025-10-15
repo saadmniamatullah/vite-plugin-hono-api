@@ -24,7 +24,6 @@ function createTempProject(options: { includeHono?: boolean } = {}): string {
     JSON.stringify({ name: 'fixture', version: '1.0.0' }),
     'utf8'
   );
-
   return dir;
 }
 
