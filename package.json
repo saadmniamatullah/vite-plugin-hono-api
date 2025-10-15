@@ -91,7 +91,8 @@
     "vitest": "^3.2.4"
   },
   "peerDependencies": {
-    "hono": "^4.6.9"
+    "hono": "^4.6.9",
+    "vite": "^6.0.0 || ^7.0.0"
   },
   "peerDependenciesMeta": {
     "@hono/node-server": {
