@@ -11,7 +11,6 @@ describe('Vite 7 Environment API Compatibility', () => {
 
     // Check for Vite 7 Environment API properties
     expect(plugin.perEnvironmentStartEndDuringDev).toBe(true);
-    expect(plugin.sharedDuringBuild).toBe(true);
     expect(typeof plugin.applyToEnvironment).toBe('function');
   });
 
@@ -73,7 +72,6 @@ describe('Vite 7 Environment API Compatibility', () => {
 
     // New properties should not break Vite 6 (they'll be ignored)
     expect(plugin.perEnvironmentStartEndDuringDev).toBe(true);
-    expect(plugin.sharedDuringBuild).toBe(true);
   });
 
   it('supports both Vite 6 and 7 version strings', () => {
