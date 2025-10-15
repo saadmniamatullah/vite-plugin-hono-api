@@ -69,24 +69,24 @@ const checkViteVersion = () => {
   try {
     const vitePkg = readJsonFile('node_modules/vite/package.json');
     if (!isJsonRecord(vitePkg)) {
-      return { valid: false, currentVersion: 'unknown' };
+      return { valid: false, currentVersion: 'unknown', majorVersion: 0 };
     }
 
     const version = getString(vitePkg.version);
     if (!version) {
-      return { valid: false, currentVersion: 'unknown' };
+      return { valid: false, currentVersion: 'unknown', majorVersion: 0 };
     }
 
     const [majorPart] = version.split('.');
     const majorVersion = Number.parseInt(majorPart ?? '', 10);
 
     if (Number.isNaN(majorVersion) || majorVersion < 6) {
-      return { valid: false, currentVersion: version };
+      return { valid: false, currentVersion: version, majorVersion };
     }
 
-    return { valid: true, currentVersion: version };
+    return { valid: true, currentVersion: version, majorVersion };
   } catch {
-    return { valid: false, currentVersion: 'unknown' };
+    return { valid: false, currentVersion: 'unknown', majorVersion: 0 };
   }
 };
 
@@ -239,6 +239,16 @@ export default function honoPlugin(options: HonoPluginOptions = {}): Plugin {
   return {
     name: 'vite-plugin-hono',
 
+    // Vite 7 Environment API support
+    perEnvironmentStartEndDuringDev: true,
+    sharedDuringBuild: true,
+
+    // Apply to server environment only
+    applyToEnvironment(environment) {
+      // Only apply to server/ssr environments, not client
+      return environment.name === 'server' || environment.name === 'ssr';
+    },
+
     config: async (_config, env) => {
       workingDir = _config?.root || process.cwd();
       const honoPath = join(workingDir, HONO_ENTRY);
@@ -299,7 +309,10 @@ export default function honoPlugin(options: HonoPluginOptions = {}): Plugin {
     },
 
     buildStart() {
-      if (isBuildCommand && this.environment?.name === 'server') {
+      // Use environment context to determine if this is the server build
+      const isServerEnv = this.environment?.name === 'server' || this.environment?.name === 'ssr';
+
+      if (isBuildCommand && isServerEnv) {
         const wrapperPath = join(workingDir, WRAPPER_FILE);
         if (!fileExists(wrapperPath)) {
           writeFileSync(wrapperPath, generateWrapper(basePath, port), 'utf8');
