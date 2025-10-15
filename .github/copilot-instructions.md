@@ -53,23 +53,27 @@ pnpm preview:play
 ## Code Style and Standards
 
 ### Module System
+
 - **ESM Only**: Always use `import`/`export` syntax, never `require()`
 - All imports should use explicit file extensions when needed
 - Use named exports for utilities, default export for the plugin
 
 ### TypeScript
+
 - Strict mode is enabled - no implicit any, proper null checks required
 - Use type imports with `import type` for type-only imports
 - Define interfaces for all public APIs and options
 - Use type guards for runtime type checking (see `isJsonRecord`, `isHonoApp`)
 
 ### Code Quality
+
 - Pre-commit hooks enforce formatting and linting
 - All code must pass ESLint checks
 - Format with Prettier before committing
 - Follow conventional commit format (feat, fix, docs, chore, etc.)
 
 ### Testing
+
 - Tests should be in `tests/` directory
 - Use Vitest for all tests
 - Maintain test coverage (configured with thresholds)
@@ -102,17 +106,21 @@ pnpm preview:play
 ## Important Constraints
 
 ### WebSocket Limitations
+
 WebSocket connections are NOT supported - the middleware doesn't handle HTTP upgrade requests. Use Server-Sent Events (SSE) instead.
 
 ### Vite Version Requirement
+
 Plugin requires Vite 6+ for Environment API support. Version validation happens at plugin initialization.
 
 ### File Structure Requirements
+
 - **Must have**: `hono/index.ts` exporting default Hono app with fetch method
 - **Generated**: `.hono-server.mjs` (temporary, cleaned up after build)
 - **Output**: `dist/frontend/` and `dist/server.js`
 
 ### Runtime Support
+
 - Node.js 18+ is required
 - Hono is a required peer dependency
 - @hono/node-server and @types/node are optional peer dependencies
@@ -152,6 +160,7 @@ Plugin requires Vite 6+ for Environment API support. Version validation happens 
 ## Additional Resources
 
 For more detailed instructions specific to other AI coding assistants:
+
 - Claude Code: See `CLAUDE.md` for Claude-specific guidance
 - OpenSpec workflow: See `openspec/AGENTS.md` for spec-driven development
 
@@ -177,6 +186,7 @@ Types: feat, fix, docs, style, refactor, perf, test, chore, build, ci, revert
 ```
 
 Examples:
+
 - `feat(plugin): add support for custom base path`
 - `fix(middleware): handle query parameters correctly`
 - `docs(readme): update installation instructions`
