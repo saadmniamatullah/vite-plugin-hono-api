@@ -1,11 +1,12 @@
 import type { Plugin, ViteDevServer } from 'vite';
+import { createRequire } from 'node:module';
 import {
   copyFileSync,
   mkdirSync,
   readFileSync,
   statSync,
-  writeFileSync,
   unlinkSync,
+  writeFileSync,
 } from 'node:fs';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { join } from 'node:path';
@@ -13,11 +14,35 @@ import { join } from 'node:path';
 type JsonRecord = Record<string, unknown>;
 type NextFunction = (err?: unknown) => void;
 
+interface HonoAppLike {
+  fetch(request: Request): Response | Promise<Response>;
+}
+
+type ModuleLoader = (url: string) => Promise<unknown>;
+
+interface ModuleGraphLike {
+  getModuleByUrl(url: string, ssr?: boolean): Promise<unknown>;
+  invalidateModule(module: unknown): void;
+}
+
+type EnvironmentLike = object | undefined;
+
+type ServerWithEnvironments = ViteDevServer & {
+  environments?: Record<string, EnvironmentLike>;
+};
+
+export interface HonoPluginOptions {
+  basePath?: string;
+  port?: number;
+}
+
+const requireFromPlugin = createRequire(import.meta.url);
+
+const HONO_ENTRY = 'hono/index.ts';
+const WRAPPER_FILE = '.hono-server.mjs';
+
 const isJsonRecord = (value: unknown): value is JsonRecord =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
-
-const getString = (value: unknown): string | undefined =>
-  typeof value === 'string' ? value : undefined;
 
 const toHeaderValue = (value: string | readonly string[] | undefined): string | undefined => {
   if (typeof value === 'string') return value;
@@ -45,62 +70,45 @@ const toSingleHeaderValue = (value: string | readonly string[] | undefined): str
   return undefined;
 };
 
-const readJsonFile = (path: string): unknown => JSON.parse(readFileSync(path, 'utf8'));
+const indentBlock = (code: string, spaces = 2) =>
+  code
+    .split('\n')
+    .map((line) => (line ? `${' '.repeat(spaces)}${line}` : line))
+    .join('\n');
 
-const isHonoApp = (value: unknown): value is HonoAppLike =>
-  typeof value === 'object' &&
-  value !== null &&
-  typeof (value as { fetch?: unknown }).fetch === 'function';
+const getEnvironmentFromContext = (context: unknown): EnvironmentLike =>
+  (context as { environment?: EnvironmentLike }).environment;
 
-const checkPeerDependencies = async () => {
-  const missing: string[] = [];
-
-  // Only Hono is required - runtime adapters are optional
-  try {
-    await import('hono');
-  } catch {
-    missing.push('hono');
+const pickModuleGraph = (candidate: EnvironmentLike): ModuleGraphLike | undefined => {
+  if (!candidate || typeof candidate !== 'object') return undefined;
+  const graph = (candidate as { moduleGraph?: unknown }).moduleGraph;
+  if (
+    graph &&
+    typeof (graph as ModuleGraphLike).getModuleByUrl === 'function' &&
+    typeof (graph as ModuleGraphLike).invalidateModule === 'function'
+  ) {
+    return graph as ModuleGraphLike;
   }
-
-  return missing;
+  return undefined;
 };
 
-const checkViteVersion = () => {
-  try {
-    const vitePkg = readJsonFile('node_modules/vite/package.json');
-    if (!isJsonRecord(vitePkg)) {
-      return { valid: false, currentVersion: 'unknown', majorVersion: 0 };
-    }
-
-    const version = getString(vitePkg.version);
-    if (!version) {
-      return { valid: false, currentVersion: 'unknown', majorVersion: 0 };
-    }
-
-    const [majorPart] = version.split('.');
-    const majorVersion = Number.parseInt(majorPart ?? '', 10);
-
-    if (Number.isNaN(majorVersion) || majorVersion < 6) {
-      return { valid: false, currentVersion: version, majorVersion };
-    }
-
-    return { valid: true, currentVersion: version, majorVersion };
-  } catch {
-    return { valid: false, currentVersion: 'unknown', majorVersion: 0 };
+const pickModuleLoader = (candidate: EnvironmentLike): ModuleLoader | undefined => {
+  if (!candidate || typeof candidate !== 'object') return undefined;
+  const container = (candidate as { pluginContainer?: unknown }).pluginContainer;
+  if (container && typeof (container as { ssrLoadModule?: unknown }).ssrLoadModule === 'function') {
+    return (container as { ssrLoadModule: ModuleLoader }).ssrLoadModule;
   }
+  return undefined;
 };
 
-export interface HonoPluginOptions {
-  basePath?: string;
-  port?: number;
-}
-
-interface HonoAppLike {
-  fetch(request: Request): Response | Promise<Response>;
-}
-
-const HONO_ENTRY = 'hono/index.ts';
-const WRAPPER_FILE = '.hono-server.mjs';
+const dependencyExists = (specifier: string): boolean => {
+  try {
+    requireFromPlugin.resolve(specifier);
+    return true;
+  } catch {
+    return false;
+  }
+};
 
 const fileExists = (path: string) => {
   try {
@@ -110,11 +118,12 @@ const fileExists = (path: string) => {
   }
 };
 
-const indentBlock = (code: string, spaces = 2) =>
-  code
-    .split('\n')
-    .map((line) => (line ? `${' '.repeat(spaces)}${line}` : line))
-    .join('\n');
+const readJsonFile = (path: string): unknown => JSON.parse(readFileSync(path, 'utf8'));
+
+const isHonoApp = (value: unknown): value is HonoAppLike =>
+  typeof value === 'object' &&
+  value !== null &&
+  typeof (value as { fetch?: unknown }).fetch === 'function';
 
 const generateWrapper = (basePath: string, port: number) => {
   const denoBlock = `const honoDenoModule = 'npm:@hono/deno@^1.0.0';
@@ -215,18 +224,38 @@ const copyDeployFiles = (targetDir: string, workingDir: string) => {
   }
 };
 
-const loadHonoApp = async (server: ViteDevServer): Promise<HonoAppLike> => {
+const loadHonoApp = async ({
+  server,
+  environment,
+}: {
+  server: ViteDevServer;
+  environment?: EnvironmentLike;
+}): Promise<HonoAppLike> => {
+  const serverWithEnv = server as unknown as ServerWithEnvironments;
+  const serverEnvironment = serverWithEnv.environments?.server;
+
+  const moduleGraph =
+    pickModuleGraph(environment) ??
+    pickModuleGraph(serverEnvironment) ??
+    (server.moduleGraph as unknown as ModuleGraphLike);
+
+  const loader =
+    pickModuleLoader(environment) ??
+    pickModuleLoader(serverEnvironment) ??
+    ((id: string) => server.ssrLoadModule(id));
+
   const url = `/${HONO_ENTRY}`;
-  const moduleNode = await server.moduleGraph.getModuleByUrl(url, true);
+  const moduleNode = await moduleGraph.getModuleByUrl(url, true);
   if (moduleNode) {
-    server.moduleGraph.invalidateModule(moduleNode);
+    moduleGraph.invalidateModule(moduleNode);
   }
 
-  const loadedModule = await server.ssrLoadModule(url);
+  const loadedModule = await loader(url);
   const app = (loadedModule as { default?: unknown }).default;
   if (!isHonoApp(app)) {
     throw new Error(`${HONO_ENTRY} must export a Hono app with fetch()`);
   }
+
   return app;
 };
 
@@ -248,54 +277,39 @@ const readBody = (req: IncomingMessage): Promise<BodyInit | undefined> =>
 
 export default function honoPlugin(options: HonoPluginOptions = {}): Plugin {
   const { basePath = '/api', port = 4173 } = options;
-  let workingDir = process.cwd();
-  let isBuildCommand = false;
 
-  // Validate Vite version
-  const viteCheck = checkViteVersion();
-  if (!viteCheck.valid) {
-    throw new Error(
-      `❌ vite-plugin-hono-api requires Vite 6+. Current version: ${viteCheck.currentVersion}\n` +
-        `To upgrade: npm install vite@latest\n` +
-        `Or check your package.json for version constraints.`
-    );
-  }
+  const environmentState = new WeakMap<object, { wrapperWritten: boolean }>();
+
+  let projectRoot = process.cwd();
+  let wrapperPath = join(projectRoot, WRAPPER_FILE);
+  let honoEntryPath = join(projectRoot, HONO_ENTRY);
+  let hasHonoEntry = false;
+  let runCommand: 'build' | 'serve' | 'test' | 'unknown' = 'unknown';
+  let wrapperPrimed = false;
 
   return {
     name: 'vite-plugin-hono',
-
-    // Vite 7 Environment API support
-    perEnvironmentStartEndDuringDev: true,
-    sharedDuringBuild: true,
-
-    // Apply to server environment only
     applyToEnvironment(environment) {
-      // Only apply to server/ssr environments, not client
       return environment.name === 'server' || environment.name === 'ssr';
     },
+    perEnvironmentStartEndDuringDev: true,
 
-    config: async (_config, env) => {
-      workingDir = _config?.root || process.cwd();
-      const honoPath = join(workingDir, HONO_ENTRY);
-      if (!fileExists(honoPath)) return {};
+    config(userConfig, env) {
+      runCommand = env.command ?? 'serve';
+      projectRoot = userConfig.root ? userConfig.root : process.cwd();
+      wrapperPath = join(projectRoot, WRAPPER_FILE);
+      honoEntryPath = join(projectRoot, HONO_ENTRY);
+      hasHonoEntry = fileExists(honoEntryPath);
 
-      isBuildCommand = env.command === 'build';
+      if (!hasHonoEntry) {
+        return {};
+      }
 
-      // Validate peer dependencies when hono entry exists (skip during tests)
-      if (process.env.NODE_ENV !== 'test') {
-        const missingDeps = await checkPeerDependencies();
-        if (missingDeps.length > 0) {
-          throw new Error(
-            `❌ Missing required peer dependency: ${missingDeps.join(', ')}\n\n` +
-              `Install it with:\n` +
-              `  npm install ${missingDeps.join(' ')}\n` +
-              `  # or\n` +
-              `  pnpm add ${missingDeps.join(' ')}\n` +
-              `  # or\n` +
-              `  bun add ${missingDeps.join(' ')}\n\n` +
-              `Note: For Node.js runtime, you'll also need: @hono/node-server @types/node`
-          );
-        }
+      if (!dependencyExists('hono')) {
+        throw new Error(
+          '❌ vite-plugin-hono-api requires the `hono` package.\n' +
+            'Install it via `pnpm add hono`, `npm install hono`, or `bun add hono`.'
+        );
       }
 
       return {
@@ -303,8 +317,8 @@ export default function honoPlugin(options: HonoPluginOptions = {}): Plugin {
         environments: {
           server: {
             build: {
-              outDir: 'dist/',
-              ssr: isBuildCommand ? `./${WRAPPER_FILE}` : HONO_ENTRY,
+              outDir: 'dist',
+              ssr: runCommand === 'build' ? `./${WRAPPER_FILE}` : HONO_ENTRY,
               copyPublicDir: false,
               emptyOutDir: false,
               rollupOptions: { output: { entryFileNames: 'server.js', format: 'esm' } },
@@ -313,65 +327,141 @@ export default function honoPlugin(options: HonoPluginOptions = {}): Plugin {
         },
         builder: {
           async buildApp(builder) {
-            await builder.build(builder.environments.client);
-            if (builder.environments.server) await builder.build(builder.environments.server);
-            copyDeployFiles('dist', workingDir);
+            const targets = Object.values(builder.environments ?? {}).filter(Boolean);
+            if (targets.length === 0) return;
+            await Promise.all(targets.map((target) => builder.build(target)));
+            copyDeployFiles('dist', projectRoot);
           },
         },
       };
     },
 
     configResolved(config) {
-      workingDir = config.root;
-      const honoPath = join(workingDir, HONO_ENTRY);
+      projectRoot = config.root;
+      wrapperPath = join(projectRoot, WRAPPER_FILE);
+      honoEntryPath = join(projectRoot, HONO_ENTRY);
+      hasHonoEntry = fileExists(honoEntryPath);
 
-      if (isBuildCommand && fileExists(honoPath)) {
-        writeFileSync(join(workingDir, WRAPPER_FILE), generateWrapper(basePath, port), 'utf8');
-        if (config.environments?.server?.build) {
-          config.environments.server.build.ssr = `./${WRAPPER_FILE}`;
-        }
+      const logger = config.logger ?? console;
+
+      if (!hasHonoEntry) {
+        logger.warn(
+          `⚠️  ${HONO_ENTRY} not found. Hono API will not be available until you create it.`
+        );
+        return;
+      }
+
+      if (runCommand === 'build' && config.environments?.server?.build) {
+        config.environments.server.build.ssr = `./${WRAPPER_FILE}`;
+      }
+
+      if (runCommand === 'build' && !wrapperPrimed) {
+        writeFileSync(wrapperPath, generateWrapper(basePath, port), 'utf8');
+        wrapperPrimed = true;
+      }
+
+      if (!dependencyExists('@hono/node-server')) {
+        logger.warn(
+          '⚠️  Optional dependency `@hono/node-server` is missing. Node.js runtime mode will fail at runtime.'
+        );
       }
     },
 
-    buildStart() {
-      // Use environment context to determine if this is the server build
-      const isServerEnv = this.environment?.name === 'server' || this.environment?.name === 'ssr';
+    configEnvironment(name, environmentConfig) {
+      if (name !== 'server' || !hasHonoEntry) return;
 
-      if (isBuildCommand && isServerEnv) {
-        const wrapperPath = join(workingDir, WRAPPER_FILE);
-        if (!fileExists(wrapperPath)) {
+      environmentConfig.build ??= {};
+      environmentConfig.build.outDir ??= 'dist';
+      environmentConfig.build.copyPublicDir ??= false;
+      environmentConfig.build.emptyOutDir ??= false;
+      const rollupOptions = (environmentConfig.build.rollupOptions ??= {});
+      const existingOutput = rollupOptions.output;
+      if (Array.isArray(existingOutput)) {
+        rollupOptions.output =
+          existingOutput.length === 0
+            ? [{ entryFileNames: 'server.js', format: 'esm' }]
+            : existingOutput.map((entry, index) =>
+                index === 0
+                  ? {
+                      ...entry,
+                      entryFileNames: entry?.entryFileNames ?? 'server.js',
+                      format: entry?.format ?? 'esm',
+                    }
+                  : entry
+              );
+      } else {
+        rollupOptions.output = {
+          ...(existingOutput ?? {}),
+          entryFileNames: existingOutput?.entryFileNames ?? 'server.js',
+          format: existingOutput?.format ?? 'esm',
+        };
+      }
+      environmentConfig.build.ssr = runCommand === 'build' ? `./${WRAPPER_FILE}` : HONO_ENTRY;
+    },
+
+    buildStart() {
+      if (runCommand !== 'build' || !hasHonoEntry) return;
+      const environment = getEnvironmentFromContext(this);
+      if (!environment || typeof environment !== 'object') return;
+      const envObject = environment;
+
+      const info = environmentState.get(envObject) ?? { wrapperWritten: false };
+      if (!info.wrapperWritten) {
+        if (!wrapperPrimed) {
           writeFileSync(wrapperPath, generateWrapper(basePath, port), 'utf8');
+          wrapperPrimed = true;
         }
+        info.wrapperWritten = true;
+        environmentState.set(envObject, info);
       }
     },
 
     closeBundle() {
-      const wrapperPath = join(workingDir, WRAPPER_FILE);
-      if (fileExists(wrapperPath)) {
+      const removeWrapper = () => {
         try {
-          unlinkSync(wrapperPath);
+          if (fileExists(wrapperPath)) {
+            unlinkSync(wrapperPath);
+          }
         } catch (error) {
           console.warn('Failed to remove generated Hono wrapper file:', error);
+        } finally {
+          wrapperPrimed = false;
         }
+      };
+
+      const environment = getEnvironmentFromContext(this);
+      if (!environment || typeof environment !== 'object') {
+        removeWrapper();
+        return;
       }
+
+      const envObject = environment;
+      const info = environmentState.get(envObject);
+      if (!info?.wrapperWritten) return;
+
+      environmentState.delete(envObject);
+      removeWrapper();
     },
 
     configureServer(server) {
-      const honoPath = join(workingDir, HONO_ENTRY);
-      if (!fileExists(honoPath)) {
-        server.config.logger.warn(
-          `⚠️  ${HONO_ENTRY} not found. Hono API will not be available.\n` +
+      const serverLogger = server.config?.logger ?? console;
+
+      if (!hasHonoEntry) {
+        serverLogger.warn(
+          `⚠️  ${HONO_ENTRY} not found. Hono API middleware disabled.\n` +
             `Create this file to enable the API:\n` +
-            `  mkdir hono\n` +
-            `  cat > hono/index.ts << 'EOF'\n` +
-            `import { Hono } from 'hono';\n\n` +
-            `const api = new Hono();\n` +
-            `api.get('/', (c) => c.json({ message: 'Hello World' }));\n\n` +
-            `export default api;\n` +
-            `EOF`
+            `  mkdir -p hono\n` +
+            `  echo "import { Hono } from 'hono';\\n\\n` +
+            `const api = new Hono();\\n` +
+            `api.get('/', (c) => c.json({ message: 'Hello World' }));\\n\\n` +
+            `export default api;\\n" > ${HONO_ENTRY}`
         );
         return;
       }
+
+      const environment =
+        getEnvironmentFromContext(this) ??
+        (server as unknown as ServerWithEnvironments).environments?.server;
 
       const handleRequest = async (
         req: IncomingMessage,
@@ -385,26 +475,26 @@ export default function honoPlugin(options: HonoPluginOptions = {}): Plugin {
 
         const protocol = toSingleHeaderValue(req.headers['x-forwarded-proto']) ?? 'http';
         const host = toSingleHeaderValue(req.headers.host) ?? 'localhost:5173';
-        const url = new URL(req.url, `${protocol}://${host}`);
-        if (!url.pathname.startsWith(basePath)) {
+        const incomingUrl = new URL(req.url, `${protocol}://${host}`);
+        if (!incomingUrl.pathname.startsWith(basePath)) {
           next();
           return;
         }
 
         try {
-          const strippedPath = url.pathname.slice(basePath.length) || '/';
-          const strippedUrl = new URL(strippedPath + url.search, url.origin);
-          const app = await loadHonoApp(server);
+          const strippedPath = incomingUrl.pathname.slice(basePath.length) || '/';
+          const targetUrl = new URL(strippedPath + incomingUrl.search, incomingUrl.origin);
+          const app = await loadHonoApp({ server, environment });
 
           const headers = new Headers();
           for (const [key, value] of Object.entries(req.headers)) {
-            const normalizedValue = toHeaderValue(value);
-            if (normalizedValue) {
-              headers.set(key, normalizedValue);
+            const normalized = toHeaderValue(value);
+            if (normalized) {
+              headers.set(key, normalized);
             }
           }
 
-          const request = new Request(strippedUrl.toString(), {
+          const request = new Request(targetUrl.toString(), {
             method: req.method,
             headers,
             body: await readBody(req),

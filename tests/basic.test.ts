@@ -264,8 +264,9 @@ describe('vite-plugin-saad', () => {
       await buildApp.call(builderHook, builderArgs as unknown as BuildAppArgs);
     }
 
-    expect(buildSpy).toHaveBeenNthCalledWith(1, 'client-env');
-    expect(buildSpy).toHaveBeenNthCalledWith(2, 'server-env');
+    expect(buildSpy).toHaveBeenCalledTimes(2);
+    const builtTargets = new Set(buildSpy.mock.calls.map(([target]) => target));
+    expect(builtTargets).toEqual(new Set(['client-env', 'server-env']));
 
     let distPackagePath = join(root, 'dist/package.json');
     try {
